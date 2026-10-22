@@ -24,48 +24,41 @@ jobs:
           sudo xcode-select -s "$SELECTED/Contents/Developer"
           xcodebuild -version
 
-      - name: Verify rich sss source
+      - name: Verify real Xxx backend and rich sss UI
         run: |
           set -euo pipefail
-          test -f TurathSource/project.yml
-          test -f TurathSource/StoreReplica/App.swift
+          test -f Feather/FeatherApp.swift
+          test -f Feather/Utilities/Handlers/SigningHandler.swift
+          test -f Feather/Utilities/Handlers/AppFileHandler.swift
+          test -f Feather/Utilities/Handlers/CertificateFileHandler.swift
+          test -f Feather/Backend/Observable/AutoSignManager.swift
+          test -f Feather/Backend/Observable/DownloadManager.swift
+          test -f Feather/Backend/Storage/Storage+Certificate.swift
+          test -f TurathSource/StoreReplica/Views/RootAndHome.swift
           test -f TurathSource/StoreReplica/Views/SigningHubView.swift
-          test -f TurathSource/StoreReplica/Views/DownloadsCenterView.swift
-          test -f TurathSource/StoreReplica/Views/SearchFastView.swift
           test -f TurathSource/StoreReplica/Views/AppCloneSheet.swift
           test -f TurathSource/StoreReplica/Views/AppDylibMergeSheet.swift
-          test -f TurathSource/StoreReplica/Core/DetailPreparationCenter.swift
-          test -f TurathSource/StoreReplica/Core/SideloadSigningCore.swift
-          test -f TurathSource/StoreReplica/BatSignCore/BatSignSigner.swift
-          test -f TurathSource/Vendor/Zsign/Package.swift
-          test -f Integration/HiddenBatSignRuntime.swift
-          test -f scripts/prepare-rich-turath-batsign.py
-          test -f scripts/verify-rich-batsign-routing.sh
-          echo "Enhanced sss signing-hub source verified."
+          test -f Integration/XxxBatSignShellBridge.swift
+          echo "Feather/BatSign backend + rich sss shell verified."
 
-      - name: Wire rich sss tools to BatSign backend
+      - name: Mount sss UI on Xxx backend
         run: |
           set -euo pipefail
-          bash scripts/build-rich-sss.sh
-          grep -F 'HiddenBatSignRuntime.shared.bootstrap()' TurathSource/StoreReplica/App.swift
-          grep -F 'BatSignSigner.sign' TurathSource/StoreReplica/BatSignCore/BatSignPackagePipeline.swift
-          grep -F 'BatSignSigner.inject' TurathSource/StoreReplica/Core/SideloadSigningCore.swift
-          echo "Visible UI stays sss; signing, clone finalization and dylib injection are routed through BatSignCore."
+          python3 scripts/prepare-sss-shell-on-xxx.py
+          test ! -d Feather/TurathShell/BatSignCore
+          ! grep -R -n 'BatSignSigner\|Zsign\.injectDyLib\|Zsign\.sign(' Feather/TurathShell --include='*.swift' --exclude='XxxBatSignShellBridge.swift'
+          grep -F 'RootStoreView()' Feather/FeatherApp.swift
+          grep -F 'AutoSignManager.shared.enqueue' Feather/TurathShell/Core/XxxBatSignShellBridge.swift
+          grep -F 'DownloadManager.shared.startDownload' Feather/TurathShell/Core/XxxBatSignShellBridge.swift
+          grep -F 'Storage.shared.addCertificate' Feather/TurathShell/Core/XxxBatSignShellBridge.swift
+          echo "SSS is UI only; real operations route to Xxx/Feather."
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Generate Turath project
-        working-directory: TurathSource
-        run: xcodegen generate
-
-      - name: Build unsigned device app
-        working-directory: TurathSource
+      - name: Build real Feather/BatSign target
         run: |
           set -o pipefail
           xcodebuild \
-            -project TurathReplica.xcodeproj \
-            -scheme TurathReplica \
+            -project Feather.xcodeproj \
+            -scheme Feather \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -77,16 +70,31 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          APP="TurathSource/build/Build/Products/Release-iphoneos/TurathReplica.app"
+          PRODUCTS="build/Build/Products/Release-iphoneos"
+          APP=$(find "$PRODUCTS" -maxdepth 1 -type d -name '*.app' | head -1)
+          test -n "$APP"
           rm -rf Payload packages
           mkdir -p Payload packages
           cp -R "$APP" Payload/
           zip -qry packages/Xxx.ipa Payload
+          echo "Packaged real target: $APP"
           ls -lh packages/Xxx.ipa
+
+      - name: Audit built binary
+        run: |
+          set -euo pipefail
+          APP=$(find Payload -maxdepth 1 -type d -name '*.app' | head -1)
+          BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          strings "$APP/$BIN" > /tmp/xxx-strings.txt
+          grep -F 'XxxBatSignBridge' /tmp/xxx-strings.txt
+          grep -F 'SigningHandler' /tmp/xxx-strings.txt
+          grep -F 'AutoSignManager' /tmp/xxx-strings.txt
+          grep -F 'RootStoreView' /tmp/xxx-strings.txt
+          echo "Built IPA contains sss shell and native Xxx signing runtime."
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Xxx-rich-sss-ipa
+          name: Xxx-sss-ui-real-batsign
           path: packages/Xxx.ipa
           if-no-files-found: error
