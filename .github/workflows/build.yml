@@ -1,0 +1,27 @@
+name: Build Xxx IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select stable Xcode
+        run: |
+          SELECTED=$(ls -d /Applications/Xcode*.app | grep -v -Ei 'beta|rc' | sort -V | tail -1)
+          sudo xcode-select -s "$SELECTED/Contents/Developer"
+          xcodebuild -version
+      - name: Build unsigned IPA
+        run: |
+          chmod +x scripts/make-ipa.sh
+          scripts/make-ipa.sh packages/Xxx.ipa
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xxx-ipa
+          path: packages/Xxx.ipa
+          if-no-files-found: error
