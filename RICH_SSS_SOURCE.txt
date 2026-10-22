@@ -1,0 +1,5 @@
+Pinned enhanced sss source:
+branch: feature/turath-signing-hub
+commit: 500c2a3c1f64d8b5a3a4e99fdfb48e347ebf0946
+
+Xxx keeps the visible enhanced sss UI and routes low-level signing/dylib injection through BatSignCore during CI preparation.
