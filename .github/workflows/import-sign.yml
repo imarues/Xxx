@@ -6,7 +6,6 @@ permissions:
   contents: write
 jobs:
   import:
-    if: github.event.head_commit.message == 'Bootstrap Sign source import'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout destination
