@@ -1,24 +1,74 @@
 name: Build Xxx IPA
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
       - name: Select stable Xcode
         run: |
+          set -euo pipefail
           SELECTED=$(ls -d /Applications/Xcode*.app | grep -v -Ei 'beta|rc' | sort -V | tail -1)
           sudo xcode-select -s "$SELECTED/Contents/Developer"
           xcodebuild -version
-      - name: Build unsigned IPA
+
+      - name: Verify exact sss source
         run: |
-          chmod +x scripts/make-ipa.sh
-          scripts/make-ipa.sh packages/Xxx.ipa
+          set -euo pipefail
+          test -f TurathSource/project.yml
+          test -f TurathSource/StoreReplica/App.swift
+          test -f TurathSource/StoreReplica/Views/RootAndHome.swift
+          test -f TurathSource/StoreReplica/Views/Components.swift
+          test -f TurathSource/StoreReplica/Views/DetailExplore.swift
+          test -f TurathSource/StoreReplica/Views/SearchUpdatesShop.swift
+          test -f TurathSource/StoreReplica/Views/LiveUpdatesView.swift
+          test -f TurathSource/Vendor/Zsign/Package.swift
+          echo "Building the exact pinned sss/Turath source. Existing Feather/BatSign source remains preserved in Xxx but is not exposed in the visible app target."
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Turath project
+        working-directory: TurathSource
+        run: xcodegen generate
+
+      - name: Build unsigned device app
+        working-directory: TurathSource
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TurathReplica.xcodeproj \
+            -scheme TurathReplica \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="TurathSource/build/Build/Products/Release-iphoneos/TurathReplica.app"
+          rm -rf Payload packages
+          mkdir -p Payload packages
+          cp -R "$APP" Payload/
+          zip -qry packages/Xxx.ipa Payload
+          ls -lh packages/Xxx.ipa
+
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:

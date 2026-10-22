@@ -1,0 +1,3 @@
+[submodule "TurathSource"]
+	path = TurathSource
+	url = https://github.com/imarues/sss.git
