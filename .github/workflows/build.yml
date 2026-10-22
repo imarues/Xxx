@@ -35,7 +35,20 @@ jobs:
           test -f TurathSource/StoreReplica/Views/SearchUpdatesShop.swift
           test -f TurathSource/StoreReplica/Views/LiveUpdatesView.swift
           test -f TurathSource/Vendor/Zsign/Package.swift
-          echo "Building the exact pinned sss/Turath source. Existing Feather/BatSign source remains preserved in Xxx but is not exposed in the visible app target."
+          test -f Integration/HiddenBatSignRuntime.swift
+          test -f scripts/prepare-turath-integration.py
+          echo "Pinned sss UI verified. Feather/BatSign UI stays hidden; backend capability bridge will be injected into the Turath target."
+
+      - name: Link hidden BatSign backend
+        run: |
+          set -euo pipefail
+          mkdir -p TurathSource/StoreReplica/Bridge
+          cp Integration/HiddenBatSignRuntime.swift TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
+          python3 scripts/prepare-turath-integration.py
+          grep -F 'HiddenBatSignRuntime.shared.bootstrap()' TurathSource/StoreReplica/App.swift
+          grep -F 'BatSignSigner.sign' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
+          grep -F 'BatSignPackagePipeline.sign' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
+          grep -F 'StoreInstallCoordinator.shared.start' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
 
       - name: Install XcodeGen
         run: brew install xcodegen
