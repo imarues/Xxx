@@ -24,31 +24,33 @@ jobs:
           sudo xcode-select -s "$SELECTED/Contents/Developer"
           xcodebuild -version
 
-      - name: Verify exact sss source
+      - name: Verify rich sss source
         run: |
           set -euo pipefail
           test -f TurathSource/project.yml
           test -f TurathSource/StoreReplica/App.swift
-          test -f TurathSource/StoreReplica/Views/RootAndHome.swift
-          test -f TurathSource/StoreReplica/Views/Components.swift
-          test -f TurathSource/StoreReplica/Views/DetailExplore.swift
-          test -f TurathSource/StoreReplica/Views/SearchUpdatesShop.swift
-          test -f TurathSource/StoreReplica/Views/LiveUpdatesView.swift
+          test -f TurathSource/StoreReplica/Views/SigningHubView.swift
+          test -f TurathSource/StoreReplica/Views/DownloadsCenterView.swift
+          test -f TurathSource/StoreReplica/Views/SearchFastView.swift
+          test -f TurathSource/StoreReplica/Views/AppCloneSheet.swift
+          test -f TurathSource/StoreReplica/Views/AppDylibMergeSheet.swift
+          test -f TurathSource/StoreReplica/Core/DetailPreparationCenter.swift
+          test -f TurathSource/StoreReplica/Core/SideloadSigningCore.swift
+          test -f TurathSource/StoreReplica/BatSignCore/BatSignSigner.swift
           test -f TurathSource/Vendor/Zsign/Package.swift
           test -f Integration/HiddenBatSignRuntime.swift
-          test -f scripts/prepare-turath-integration.py
-          echo "Pinned sss UI verified. Feather/BatSign UI stays hidden; backend capability bridge will be injected into the Turath target."
+          test -f scripts/prepare-rich-turath-batsign.py
+          test -f scripts/verify-rich-batsign-routing.sh
+          echo "Enhanced sss signing-hub source verified."
 
-      - name: Link hidden BatSign backend
+      - name: Wire rich sss tools to BatSign backend
         run: |
           set -euo pipefail
-          mkdir -p TurathSource/StoreReplica/Bridge
-          cp Integration/HiddenBatSignRuntime.swift TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
-          python3 scripts/prepare-turath-integration.py
+          bash scripts/build-rich-sss.sh
           grep -F 'HiddenBatSignRuntime.shared.bootstrap()' TurathSource/StoreReplica/App.swift
-          grep -F 'BatSignSigner.sign' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
-          grep -F 'BatSignPackagePipeline.sign' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
-          grep -F 'StoreInstallCoordinator.shared.start' TurathSource/StoreReplica/Bridge/HiddenBatSignRuntime.swift
+          grep -F 'BatSignSigner.sign' TurathSource/StoreReplica/BatSignCore/BatSignPackagePipeline.swift
+          grep -F 'BatSignSigner.inject' TurathSource/StoreReplica/Core/SideloadSigningCore.swift
+          echo "Visible UI stays sss; signing, clone finalization and dylib injection are routed through BatSignCore."
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -85,6 +87,6 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Xxx-ipa
+          name: Xxx-rich-sss-ipa
           path: packages/Xxx.ipa
           if-no-files-found: error
