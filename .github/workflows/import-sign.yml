@@ -1,0 +1,33 @@
+name: Import Sign Source
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.event.head_commit.message == 'Bootstrap Sign source import'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout destination
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: imarues/Sign
+          path: source
+      - name: Import source without certificate files
+        run: |
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name source -exec rm -rf {} +
+          cp -a source/. .
+          rm -rf source
+          rm -f Feather/signing-assets/iKiraPlus/cert.p12
+          rm -f Feather/signing-assets/iKiraPlus/cert.mobileprovision
+          rm -f Feather/signing-assets/iKiraPlus/cert.txt
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'Import BatSign source without certificate assets'
+          git push origin HEAD:main
