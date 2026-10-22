@@ -17,10 +17,11 @@ jobs:
         with:
           repository: imarues/Sign
           path: source
+          persist-credentials: false
       - name: Import source without certificate files
         run: |
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name source -exec rm -rf {} +
-          cp -a source/. .
+          rsync -a --exclude='.git' source/ ./
           rm -rf source
           rm -f Feather/signing-assets/iKiraPlus/cert.p12
           rm -f Feather/signing-assets/iKiraPlus/cert.mobileprovision
