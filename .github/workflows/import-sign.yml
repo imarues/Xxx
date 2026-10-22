@@ -20,8 +20,8 @@ jobs:
           persist-credentials: false
       - name: Import source without certificate files
         run: |
-          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name source -exec rm -rf {} +
-          rsync -a --exclude='.git' source/ ./
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name source -exec rm -rf {} +
+          rsync -a --exclude='.git' --exclude='.github/workflows' source/ ./
           rm -rf source
           rm -f Feather/signing-assets/iKiraPlus/cert.p12
           rm -f Feather/signing-assets/iKiraPlus/cert.mobileprovision
