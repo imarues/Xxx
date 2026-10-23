@@ -113,6 +113,64 @@ new_section = r'''
 downloads_text = downloads_text.replace(marker, new_section + marker, 1)
 downloads_view.write_text(downloads_text, encoding='utf-8')
 
+# IMPORTANT: The header opens SigningHubView and its .apps tab.
+# DownloadsCenterView is a separate view and is NOT what that tab displays.
+# Bind the actual shown SSS screens (hub + top header) to the native ledger.
+def replace_required(data: str, needle: str, replacement: str, file: Path) -> str:
+    count = data.count(needle)
+    if count != 1:
+        raise SystemExit(f"Expected one insertion point in {file}: {needle[:65]} (found {count})")
+    return data.replace(needle, replacement, 1)
+
+
+hub_path = DST / 'Views' / 'SigningHubView.swift'
+hub_text = hub_path.read_text(encoding='utf-8')
+hub_text = replace_required(
+    hub_text,
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared',
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared\n'
+    '    @ObservedObject private var featherOperations = XxxOperationLedger.shared',
+    hub_path
+)
+hub_text = replace_required(
+    hub_text,
+    '        transfers.activeCount(using: installer, detail: detailCenter)\n    }',
+    '        max(transfers.activeCount(using: installer, detail: detailCenter),\n'
+    '            featherOperations.entries.count + transfers.activeDirectOperations.count)\n    }',
+    hub_path
+)
+hub_text = replace_required(
+    hub_text,
+    '            if model.libraryItems.isEmpty && model.directDownloads.isEmpty && activeTransferCount == 0 {',
+    '            if !featherOperations.entries.isEmpty { featherOperationsSection }\n'
+    '            if model.libraryItems.isEmpty && model.directDownloads.isEmpty && activeTransferCount == 0 {',
+    hub_path
+)
+hub_marker = '    private var downloadsSection: some View {'
+hub_text = replace_required(hub_text, hub_marker, new_section + hub_marker, hub_path)
+hub_path.write_text(hub_text, encoding='utf-8')
+
+# Header is where the download icon lives, next to settings. Show its red
+# number for saved records as well as running downloads.
+header_path = DST / 'Views' / 'RootAndHome.swift'
+header_text = header_path.read_text(encoding='utf-8')
+header_text = replace_required(
+    header_text,
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared',
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared\n'
+    '    @ObservedObject private var featherOperations = XxxOperationLedger.shared',
+    header_path
+)
+header_text = replace_required(
+    header_text,
+    '        transfers.activeCount(using: installer, detail: detailCenter)\n    }',
+    '        max(transfers.activeCount(using: installer, detail: detailCenter),\n'
+    '            featherOperations.entries.count + transfers.activeDirectOperations.count)\n    }',
+    header_path
+)
+header_path.write_text(header_text, encoding='utf-8')
+
+
 
 # SideloadSigningCore is retained only for the UI's metadata, picker vault and
 # local-library models. Remove its package mutation/injection implementation.
