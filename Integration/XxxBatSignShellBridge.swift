@@ -372,19 +372,46 @@ enum XxxBatSignBridge {
         metadata: SideloadIPAMetadata?,
         copyNumber: Int?,
         dylibs: [URL],
+        operationKind: XxxOperationRecord.Kind = .localFile,
         progress: @escaping (Double, String) -> Void,
         completion: @escaping (Result<StoreApp, Error>) -> Void
     ) {
         let transferID = "BatSignLibraryOnly_" + UUID().uuidString
         let handler = AppFileHandler(file: ipa, transferID: transferID)
+        let operationID = UUID().uuidString
+        let sourceBytes = (try? ipa.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
+        let fileBytes = metadata?.size ?? sourceBytes
+        let kind: XxxOperationRecord.Kind = !dylibs.isEmpty ? .injection : (copyNumber != nil ? .clone : operationKind)
+        let sourceName = metadata?.name ?? ipa.deletingPathExtension().lastPathComponent
+        let displayedName = copyNumber.map { sourceName + " " + String($0) } ?? sourceName
+        let targetBundle = copyNumber.flatMap { n in metadata?.bundleID.map { $0 + String(n) } } ?? metadata?.bundleID
+
+        // Register before the detached import can publish progress or finish.
+        let beginTask = Task { @MainActor in
+            XxxOperationLedger.shared.begin(
+                id: operationID, name: displayedName, bundle: targetBundle,
+                size: fileBytes, version: metadata?.version, kind: kind
+            )
+        }
+        let trackedProgress: (Double, String) -> Void = { value, status in
+            Task { @MainActor in
+                XxxOperationLedger.shared.update(id: operationID, progress: value, message: status)
+            }
+            progress(value, status)
+        }
+        let trackedCompletion: (Result<StoreApp, Error>) -> Void = { result in
+            Task { @MainActor in XxxOperationLedger.shared.finish(id: operationID, result: result) }
+            completion(result)
+        }
 
         Task.detached(priority: .userInitiated) {
+            await beginTask.value
             do {
-                progress(0.08, "جاري استيراد التطبيق")
+                trackedProgress(0.08, "جاري استيراد التطبيق")
                 try await handler.copy()
-                progress(0.18, "جاري فك IPA")
+                trackedProgress(0.18, "جاري فك IPA")
                 try await handler.extract()
-                progress(0.36, "جاري إضافة التطبيق إلى BatSign")
+                trackedProgress(0.36, "جاري إضافة التطبيق إلى BatSign")
                 try await handler.move()
                 try await handler.addToDatabase()
                 try? await handler.clean()
@@ -408,7 +435,7 @@ enum XxxBatSignBridge {
                         options.appName = nil
                     }
 
-                    progress(0.58, dylibs.isEmpty ? "جاري التوقيع عبر BatSign" : "جاري الحقن والتوقيع عبر BatSign")
+                    trackedProgress(0.58, dylibs.isEmpty ? "جاري التوقيع عبر BatSign" : "جاري الحقن والتوقيع عبر BatSign")
                     guard AutoSignManager.shared.enqueue(
                         app: imported,
                         reason: .autoSign,
@@ -437,12 +464,12 @@ enum XxxBatSignBridge {
                         downloadUrl: nil,
                         downloadURL: nil
                     )
-                    progress(0.72, "تم تسليم العملية إلى محرك BatSign")
-                    awaitNativeResult(uuid: handler.importedAppUUID, app: result, completion: completion)
+                    trackedProgress(0.72, "تم تسليم العملية إلى محرك BatSign")
+                    awaitNativeResult(uuid: handler.importedAppUUID, app: result, completion: trackedCompletion)
                 }
             } catch {
                 try? await handler.clean()
-                await MainActor.run { completion(.failure(error)) }
+                await MainActor.run { trackedCompletion(.failure(error)) }
             }
         }
     }
