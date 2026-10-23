@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ipastore-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
@@ -59,8 +63,9 @@ jobs:
       - name: Generate ipastore icon
         run: |
           set -euo pipefail
-          python3 -m pip install Pillow
-          python3 scripts/make-icon.py
+          python3 -m venv .icon-venv
+          .icon-venv/bin/pip install --quiet Pillow
+          .icon-venv/bin/python scripts/make-icon.py
           test -s Feather/Resources/Assets.xcassets/AppIcon.appiconset/feather.png
           test -s Feather/Resources/AppIcon.icon/Assets/feather.png
 
