@@ -42,16 +42,13 @@ extension ServerInstaller {
 		return value.isEmpty ? "1.0.0" : value
 	}
 
-	/// GBox 6.1.3 starts CocoaHTTPServer on port 9800 with .InstallPackage as
-	/// its document root, so the signed archive is reachable as /app.ipa.
+	/// GBox serves the signed archive from the local listener on port 9800.
 	var gboxPayloadEndpoint: URL {
 		URL(string: "http://127.0.0.1:9800/app.ipa")!
 	}
 
-	/// Build the same production GBox manifest key, but hand iOS a manifest URL
-	/// on our own Pages domain. The Pages Function proxies the GBox plist bytes
-	/// server-side without redirecting the device, so the visible install origin
-	/// is ikiraplus.pages.dev while the signing and payload flow stay unchanged.
+	/// Build the production GBox manifest URL directly. No ikiraplus.pages.dev
+	/// proxy/redirect sits between iOS and GBox anymore.
 	var gboxManifestEndpoint: URL? {
 		let manifestFile: String
 
@@ -64,7 +61,7 @@ extension ServerInstaller {
 			manifestFile = "install.plist"
 		}
 
-		return URL(string: "https://ikiraplus.pages.dev/install/\(manifestFile)")
+		return URL(string: "https://i.gbox.run/\(manifestFile)")
 	}
 
 	/// Local endpoints are retained as a fallback/debug route.
