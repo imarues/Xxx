@@ -37,6 +37,83 @@ for name in [
 
 shutil.copy2(BRIDGE, DST / 'Core' / 'XxxBatSignShellBridge.swift')
 
+# The original SSS DownloadsCenter remains the visible UI. Its completed
+# downloads previously read only SSS storage, whereas native Feather signs
+# into its own queue. Add an SSS-styled record section backed by that queue.
+downloads_view = DST / 'Views' / 'DownloadsCenterView.swift'
+downloads_text = downloads_view.read_text(encoding='utf-8')
+downloads_text = downloads_text.replace(
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared',
+    '    @ObservedObject private var transfers = TransferActivityCenter.shared\n    @ObservedObject private var featherOperations = XxxOperationLedger.shared',
+    1,
+)
+downloads_text = downloads_text.replace(
+    '                    completedSection',
+    '                    if !featherOperations.entries.isEmpty { featherOperationsSection }\n                    completedSection',
+    1,
+)
+marker = '    private var completedSection: some View {'
+if marker not in downloads_text:
+    raise SystemExit('DownloadsCenter section insertion point missing')
+new_section = r'''
+    // Real Feather/BatSign results, shown inside SSS's existing Downloads tab.
+    private var featherOperationsSection: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            Text("عمليات التطبيقات")
+                .font(AppFont.black(18))
+                .foregroundStyle(StoreTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            ForEach(featherOperations.entries) { operation in
+                VStack(alignment: .trailing, spacing: 9) {
+                    HStack(spacing: 12) {
+                        Image(systemName: operation.kind == .clone ? "square.on.square" :
+                                (operation.kind == .injection ? "puzzlepiece.extension.fill" : "arrow.down.app.fill"))
+                            .font(.system(size: 23, weight: .semibold))
+                            .foregroundStyle(StoreTheme.accent)
+                            .frame(width: 52, height: 52)
+                            .background(StoreTheme.field)
+                            .clipShape(RoundedRectangle(cornerRadius: 13))
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text(operation.name)
+                                .font(AppFont.black(14))
+                                .foregroundStyle(StoreTheme.textPrimary)
+                            Text(operation.bundle)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(StoreTheme.textSecondary)
+                                .lineLimit(1)
+                                .environment(\.layoutDirection, .leftToRight)
+                            Text(operation.kind.label + " • " + (operation.size > 0 ? formatBytes(operation.size) : "حجم غير معروف"))
+                                .font(AppFont.medium(10))
+                                .foregroundStyle(StoreTheme.accent)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        Spacer(minLength: 0)
+                    }
+                    Text(operation.message)
+                        .font(AppFont.regular(11))
+                        .foregroundStyle(operation.state == .failed ? Color.red : StoreTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    if operation.state == .running {
+                        ProgressView(value: operation.progress)
+                            .tint(StoreTheme.accent)
+                        Text("\(Int(operation.progress * 100))%")
+                            .font(AppFont.bold(10))
+                            .foregroundStyle(StoreTheme.accent)
+                    }
+                }
+                .padding(13)
+                .background(StoreTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(StoreTheme.surfaceBorder, lineWidth: 0.8))
+            }
+        }
+    }
+
+'''
+downloads_text = downloads_text.replace(marker, new_section + marker, 1)
+downloads_view.write_text(downloads_text, encoding='utf-8')
+
+
 # SideloadSigningCore is retained only for the UI's metadata, picker vault and
 # local-library models. Remove its package mutation/injection implementation.
 sideload = DST / 'Core' / 'SideloadSigningCore.swift'
