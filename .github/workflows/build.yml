@@ -86,10 +86,12 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          # Feather Release uses DEPLOYMENT_LOCATION and installs here.
-          APP="_build/Applications/BatSign.app"
+          # Resolve the actual Release product name from Xcode instead of assuming BatSign.app.
+          APP=$(find _build/Applications -maxdepth 1 -type d -name '*.app' | head -1)
+          test -n "$APP"
           test -d "$APP"
           test -f "$APP/Info.plist"
+          echo "Found built app: $APP"
           BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
           test -s "$APP/$BIN"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist")" = "ipastore"
