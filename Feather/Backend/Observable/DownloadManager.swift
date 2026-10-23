@@ -12,6 +12,9 @@ import UserNotifications
 import OSLog
 
 class Download: Identifiable, @unchecked Sendable {
+    // Exact native import outcome consumed by the SSS shell bridge.
+    var importedAppUUID: String?
+    var failureMessage: String?
 	@Published var progress: Double = 0.0
 	@Published var bytesDownloaded: Int64 = 0
 	@Published var totalBytes: Int64 = 0
@@ -404,6 +407,7 @@ class DownloadManager: NSObject, ObservableObject {
 	/// reporting itself lands on the main actor.
 	@MainActor
 	private func _fail(_ download: Download, reason: String) {
+        download.failureMessage = reason
 		let name = download.cardName
 		let identifier = download.liveID
 		Self.log.error("download: failed \(download.id.prefix(8), privacy: .public) — \(reason, privacy: .public)")

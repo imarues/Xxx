@@ -54,6 +54,16 @@ final class AutoSignManager: ObservableObject {
 	@Published private(set) var completedCount = 0
 	@Published private(set) var lastErrorMessage: String?
 
+    struct ShellJobResult {
+        let handedOff: Bool
+        let errorMessage: String?
+    }
+    private var shellJobResults: [String: ShellJobResult] = [:]
+
+    func takeShellJobResult(for uuid: String) -> ShellJobResult? {
+        shellJobResults.removeValue(forKey: uuid)
+    }
+
 	/// How an install ended, for the popup inside the app.
 	///
 	/// The island says what is happening while it happens and the notification
@@ -575,6 +585,10 @@ final class AutoSignManager: ObservableObject {
 			if queue.contains(where: { $0.appUUID == job.appUUID && $0.retryCount > job.retryCount }) {
 				continue
 			}
+            if shellJobResults.count > 100 { shellJobResults.removeAll() }
+            shellJobResults[job.appUUID] = ShellJobResult(
+                handedOff: outcome, errorMessage: outcome ? nil : lastErrorMessage
+            )
 			_retireCard(for: job)
 		}
 	}

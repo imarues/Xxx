@@ -79,6 +79,10 @@ enum SigningAssetProvider {
     /// every later sign/clone/injection.
     @MainActor
     static func importCertificate(p12URL: URL, profileURL: URL, password: String) throws {
+        let p12Access = p12URL.startAccessingSecurityScopedResource()
+        defer { if p12Access { p12URL.stopAccessingSecurityScopedResource() } }
+        let provisionAccess = profileURL.startAccessingSecurityScopedResource()
+        defer { if provisionAccess { profileURL.stopAccessingSecurityScopedResource() } }
         guard p12URL.pathExtension.lowercased() == "p12" else { throw SigningAssetError.wrongP12Extension }
         guard profileURL.pathExtension.lowercased() == "mobileprovision" else { throw SigningAssetError.wrongProvisionExtension }
         guard FR.checkPasswordForCertificate(for: p12URL, with: password, using: profileURL) else {
@@ -94,10 +98,6 @@ enum SigningAssetProvider {
         let keyTarget = folder.appendingPathComponent("certificate.p12")
         let provisionTarget = folder.appendingPathComponent("certificate.mobileprovision")
         do {
-            let p12Access = p12URL.startAccessingSecurityScopedResource()
-            defer { if p12Access { p12URL.stopAccessingSecurityScopedResource() } }
-            let provisionAccess = profileURL.startAccessingSecurityScopedResource()
-            defer { if provisionAccess { profileURL.stopAccessingSecurityScopedResource() } }
             try Data(contentsOf: p12URL).write(to: keyTarget, options: .atomic)
             try Data(contentsOf: profileURL).write(to: provisionTarget, options: .atomic)
         } catch {
@@ -240,24 +240,43 @@ struct StoreInstallJob: Identifiable, Equatable {
 // MARK: - Real Xxx/BatSign operation bridge
 
 enum XxxBatSignBridge {
-    private static func importedApps() -> [Imported] {
-        let request: NSFetchRequest<Imported> = Imported.fetchRequest()
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Imported.date, ascending: false)]
-        return (try? Storage.shared.context.fetch(request)) ?? []
-    }
-
     @MainActor
     static func selectedCertificate() -> CertificatePair? {
         SigningAssetProvider.selectedCertificate
     }
 
     @MainActor
-    static func importedApp(since: Date, bundleID: String?) -> Imported? {
-        importedApps().first { app in
-            guard let date = app.date, date >= since.addingTimeInterval(-1) else { return false }
-            guard let bundleID, !bundleID.isEmpty else { return true }
-            return app.identifier == bundleID
-        } ?? importedApps().first { ($0.date ?? .distantPast) >= since.addingTimeInterval(-1) }
+    private static func importedApp(uuid: String) -> Imported? {
+        let request: NSFetchRequest<Imported> = Imported.fetchRequest()
+        request.predicate = NSPredicate(format: "uuid == %@", uuid)
+        request.fetchLimit = 1
+        return (try? Storage.shared.context.fetch(request))?.first
+    }
+
+    // Enqueueing is not a successful signature. Only the native queue can
+    // report whether the operation actually reached the installer.
+    @MainActor
+    private static func awaitNativeResult(
+        uuid: String, app: StoreApp,
+        completion: @escaping (Result<StoreApp, Error>) -> Void
+    ) {
+        Task { @MainActor in
+            let deadline = Date().addingTimeInterval(2 * 60 * 60)
+            while Date() < deadline {
+                if let result = AutoSignManager.shared.takeShellJobResult(for: uuid) {
+                    if result.handedOff {
+                        completion(.success(app))
+                    } else {
+                        completion(.failure(NSError(domain: "XxxBatSignBridge", code: 30,
+                            userInfo: [NSLocalizedDescriptionKey: result.errorMessage ?? "تعذر إكمال التوقيع أو تسليم التطبيق للتثبيت."])))
+                    }
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+            completion(.failure(NSError(domain: "XxxBatSignBridge", code: 31,
+                userInfo: [NSLocalizedDescriptionKey: "لم تصل نتيجة التوقيع من BatSign. راجع حالة العملية."])))
+        }
     }
 
     /// Import a local IPA with Feather's AppFileHandler, then sign it with
@@ -271,7 +290,6 @@ enum XxxBatSignBridge {
         progress: @escaping (Double, String) -> Void,
         completion: @escaping (Result<StoreApp, Error>) -> Void
     ) {
-        let started = Date()
         let transferID = "BatSignLibraryOnly_" + UUID().uuidString
         let handler = AppFileHandler(file: ipa, transferID: transferID)
 
@@ -288,7 +306,7 @@ enum XxxBatSignBridge {
 
                 try await MainActor.run {
                     guard let cert = selectedCertificate() else { throw SigningAssetError.invalidP12 }
-                    guard let imported = importedApp(since: started, bundleID: metadata?.bundleID) else {
+                    guard let imported = importedApp(uuid: handler.importedAppUUID) else {
                         throw NSError(domain: "XxxBatSignBridge", code: 10, userInfo: [NSLocalizedDescriptionKey: "تعذر العثور على التطبيق بعد استيراده إلى BatSign."])
                     }
 
@@ -335,7 +353,7 @@ enum XxxBatSignBridge {
                         downloadURL: nil
                     )
                     progress(0.72, "تم تسليم العملية إلى محرك BatSign")
-                    completion(.success(result))
+                    awaitNativeResult(uuid: handler.importedAppUUID, app: result, completion: completion)
                 }
             } catch {
                 try? await handler.clean()
@@ -367,7 +385,6 @@ enum XxxBatSignBridge {
             return
         }
 
-        let started = Date()
         let transferID = "BatSignLibraryOnly_" + UUID().uuidString
         let download = DownloadManager.shared.startDownload(
             from: url,
@@ -380,7 +397,7 @@ enum XxxBatSignBridge {
         Task { @MainActor in
             let deadline = Date().addingTimeInterval(60 * 60 * 2)
             while Date() < deadline {
-                if let imported = importedApp(since: started, bundleID: app.bundleId) {
+                if let uuid = download.importedAppUUID, let imported = importedApp(uuid: uuid) {
                     guard let cert = selectedCertificate() else {
                         completion(.failure(SigningAssetError.invalidP12)); return
                     }
@@ -425,16 +442,18 @@ enum XxxBatSignBridge {
                         downloadUrl: app.downloadUrl,
                         downloadURL: app.downloadURL
                     )
-                    completion(.success(result))
+                    awaitNativeResult(uuid: uuid, app: result, completion: completion)
                     return
                 }
 
-                if let live = DownloadManager.shared.allDownloads.first(where: { $0.id == transferID }) {
-                    progress(min(0.68, max(0.02, live.transferProgress * 0.68)), "جاري التحميل عبر BatSign")
-                } else if !DownloadManager.shared.allDownloads.contains(where: { $0.id == transferID }), Date().timeIntervalSince(started) > 4 {
-                    // The transfer may already have crossed into AppFileHandler;
-                    // give the CoreData insert a little more time before failing.
+                if let failure = download.failureMessage {
+                    completion(.failure(NSError(domain: "XxxBatSignBridge", code: 23,
+                        userInfo: [NSLocalizedDescriptionKey: failure])))
+                    return
                 }
+                let status = download.formattedSpeed.map { "جاري التحميل عبر BatSign · " + $0 }
+                    ?? "جاري التحميل عبر BatSign"
+                progress(min(0.68, max(0.02, download.transferProgress * 0.68)), status)
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
             completion(.failure(NSError(domain: "XxxBatSignBridge", code: 22, userInfo: [NSLocalizedDescriptionKey: "انتهت مهلة تجهيز التطبيق في BatSign."])))
@@ -480,10 +499,10 @@ final class StoreInstallCoordinator: ObservableObject {
                 Task { @MainActor in
                     switch result {
                     case .success:
-                        self?.states[app.id] = StoreInstallState(phase: .installing, progress: 0.95, message: "تم التوقيع، جاري التثبيت عبر BatSign")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 8) {
-                            self?.states[app.id] = StoreInstallState(phase: .complete, progress: 1, message: "اكتملت العملية")
-                        }
+                        self?.states[app.id] = StoreInstallState(
+                            phase: .ready, progress: 1,
+                            message: "تم التوقيع وتسليم التطبيق إلى المثبّت"
+                        )
                     case .failure(let error):
                         self?.states[app.id] = StoreInstallState(phase: .failed, progress: 0, message: error.localizedDescription)
                     }

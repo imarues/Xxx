@@ -13,6 +13,7 @@ import SwiftUI
 final class AppFileHandler: NSObject, @unchecked Sendable {
 	private let _fileManager = FileManager.default
 	private let _uuid = UUID().uuidString
+    var importedAppUUID: String { _uuid }
 	private let _uniqueWorkDir: URL
 	var uniqueWorkDirPayload: URL?
 
@@ -136,6 +137,7 @@ final class AppFileHandler: NSObject, @unchecked Sendable {
 
 		await MainActor.run {
 			if isLibraryOnlyImport {
+                _download?.importedAppUUID = _uuid
 				LiveStatus.finish(
 					success: true,
 					appName: cardName,
