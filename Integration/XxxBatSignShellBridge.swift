@@ -237,6 +237,91 @@ struct StoreInstallJob: Identifiable, Equatable {
     let expectedBytes: Int64
 }
 
+
+// Activity ledger for SSS presentation. Real operations remain in Feather/BatSign.
+struct XxxOperationRecord: Identifiable, Codable {
+    enum Kind: String, Codable { case download, clone, injection, localFile
+        var label: String {
+            switch self {
+            case .download: return "تحميل التطبيق"
+            case .clone: return "تكرار التطبيق"
+            case .injection: return "حقن ديلب"
+            case .localFile: return "توقيع ملف IPA"
+            }
+        }
+    }
+    enum State: String, Codable { case running, completed, failed, interrupted }
+    let id: String
+    var name: String
+    var bundle: String
+    var size: Int64
+    var version: String
+    var kind: Kind
+    var state: State
+    var progress: Double
+    var message: String
+    let date: Date
+}
+
+@MainActor
+final class XxxOperationLedger: ObservableObject {
+    static let shared = XxxOperationLedger()
+    @Published private(set) var entries: [XxxOperationRecord] = []
+    private let key = "Xxx.SSS.FeatherOperationLedger.v1"
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let records = try? JSONDecoder().decode([XxxOperationRecord].self, from: data) {
+            entries = records.map { record in
+                var value = record
+                if value.state == .running {
+                    value.state = .interrupted
+                    value.message = "انقطعت متابعة العملية عند إغلاق التطبيق"
+                }
+                return value
+            }
+            save()
+        }
+    }
+    private func save() {
+        // Keep recent results without filling user defaults indefinitely.
+        if let data = try? JSONEncoder().encode(Array(entries.prefix(120))) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+    func begin(id: String, name: String, bundle: String?, size: Int64?,
+               version: String?, kind: XxxOperationRecord.Kind) {
+        entries.removeAll { $0.id == id }
+        entries.insert(XxxOperationRecord(
+            id: id, name: name, bundle: bundle ?? "—", size: size ?? 0,
+            version: version ?? "—", kind: kind, state: .running,
+            progress: 0.01, message: "جاري بدء العملية", date: Date()
+        ), at: 0)
+        save()
+    }
+    func update(id: String, progress: Double, message: String) {
+        guard let i = entries.firstIndex(where: { $0.id == id && $0.state == .running }) else { return }
+        entries[i].progress = max(entries[i].progress, min(0.99, max(0, progress)))
+        entries[i].message = message
+        save()
+    }
+    func finish(id: String, result: Result<StoreApp, Error>) {
+        guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
+        switch result {
+        case .success(let app):
+            entries[i].name = app.name
+            entries[i].bundle = app.bundleId ?? entries[i].bundle
+            entries[i].size = app.fileSize ?? entries[i].size
+            entries[i].state = .completed
+            entries[i].progress = 1
+            entries[i].message = "تم التوقيع وتسليم التطبيق للمثبّت"
+        case .failure(let error):
+            entries[i].state = .failed
+            entries[i].message = error.localizedDescription
+        }
+        save()
+    }
+}
+
 // MARK: - Real Xxx/BatSign operation bridge
 
 enum XxxBatSignBridge {
@@ -377,15 +462,31 @@ enum XxxBatSignBridge {
         guard let raw = app.effectiveDownloadURL,
               let url = URL(string: raw),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
-            completion(.failure(NSError(domain: "XxxBatSignBridge", code: 20, userInfo: [NSLocalizedDescriptionKey: "رابط IPA غير صالح."])))
+            trackedCompletion(.failure(NSError(domain: "XxxBatSignBridge", code: 20, userInfo: [NSLocalizedDescriptionKey: "رابط IPA غير صالح."])))
             return
         }
         guard selectedCertificate() != nil else {
-            completion(.failure(SigningAssetError.invalidP12))
+            trackedCompletion(.failure(SigningAssetError.invalidP12))
             return
         }
 
         let transferID = "BatSignLibraryOnly_" + UUID().uuidString
+        let operationID = UUID().uuidString
+        let kind: XxxOperationRecord.Kind = copyNumber != nil ? .clone : (!dylibs.isEmpty ? .injection : .download)
+        XxxOperationLedger.shared.begin(
+            id: operationID,
+            name: copyNumber.map { app.name + " " + String($0) } ?? app.name,
+            bundle: copyNumber.flatMap { number in app.bundleId.map { $0 + String(number) } } ?? app.bundleId,
+            size: app.fileSize, version: app.version, kind: kind
+        )
+        let trackedProgress: (Double, String) -> Void = { value, message in
+            XxxOperationLedger.shared.update(id: operationID, progress: value, message: message)
+            progress(value, message)
+        }
+        let trackedCompletion: (Result<StoreApp, Error>) -> Void = { result in
+            XxxOperationLedger.shared.finish(id: operationID, result: result)
+            completion(result)
+        }
         let download = DownloadManager.shared.startDownload(
             from: url,
             id: transferID,
@@ -399,7 +500,7 @@ enum XxxBatSignBridge {
             while Date() < deadline {
                 if let uuid = download.importedAppUUID, let imported = importedApp(uuid: uuid) {
                     guard let cert = selectedCertificate() else {
-                        completion(.failure(SigningAssetError.invalidP12)); return
+                        trackedCompletion(.failure(SigningAssetError.invalidP12)); return
                     }
                     var options = OptionsManager.shared.options
                     options.signingOption = .default
@@ -414,7 +515,7 @@ enum XxxBatSignBridge {
                         options.appName = nil
                     }
 
-                    progress(0.72, dylibs.isEmpty ? "جاري التوقيع عبر BatSign" : "جاري الحقن والتوقيع عبر BatSign")
+                    trackedProgress(0.72, dylibs.isEmpty ? "جاري التوقيع عبر BatSign" : "جاري الحقن والتوقيع عبر BatSign")
                     guard AutoSignManager.shared.enqueue(
                         app: imported,
                         reason: .autoSign,
@@ -422,7 +523,7 @@ enum XxxBatSignBridge {
                         options: options,
                         force: true
                     ) else {
-                        completion(.failure(NSError(domain: "XxxBatSignBridge", code: 21, userInfo: [NSLocalizedDescriptionKey: "تعذر تشغيل توقيع BatSign."]))); return
+                        trackedCompletion(.failure(NSError(domain: "XxxBatSignBridge", code: 21, userInfo: [NSLocalizedDescriptionKey: "تعذر تشغيل توقيع BatSign."]))); return
                     }
                     let result = StoreApp(
                         id: imported.uuid ?? app.id,
@@ -442,21 +543,21 @@ enum XxxBatSignBridge {
                         downloadUrl: app.downloadUrl,
                         downloadURL: app.downloadURL
                     )
-                    awaitNativeResult(uuid: uuid, app: result, completion: completion)
+                    awaitNativeResult(uuid: uuid, app: result, completion: trackedCompletion)
                     return
                 }
 
                 if let failure = download.failureMessage {
-                    completion(.failure(NSError(domain: "XxxBatSignBridge", code: 23,
+                    trackedCompletion(.failure(NSError(domain: "XxxBatSignBridge", code: 23,
                         userInfo: [NSLocalizedDescriptionKey: failure])))
                     return
                 }
                 let status = download.formattedSpeed.map { "جاري التحميل عبر BatSign · " + $0 }
                     ?? "جاري التحميل عبر BatSign"
-                progress(min(0.68, max(0.02, download.transferProgress * 0.68)), status)
+                trackedProgress(min(0.68, max(0.02, download.transferProgress * 0.68)), status)
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
-            completion(.failure(NSError(domain: "XxxBatSignBridge", code: 22, userInfo: [NSLocalizedDescriptionKey: "انتهت مهلة تجهيز التطبيق في BatSign."])))
+            trackedCompletion(.failure(NSError(domain: "XxxBatSignBridge", code: 22, userInfo: [NSLocalizedDescriptionKey: "انتهت مهلة تجهيز التطبيق في BatSign."])))
         }
     }
 }
