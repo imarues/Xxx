@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>ipastore</string>
+	<key>CFBundleName</key>
+	<string>ipastore</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
@@ -23,7 +27,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>app.batsign.ios.ipa</string>
+				<string>com.ipastore.ipa</string>
 			</array>
 		</dict>
 		<dict>
@@ -37,7 +41,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>app.batsign.ios.tipa</string>
+				<string>com.ipastore.tipa</string>
 			</array>
 		</dict>
 	</array>
@@ -61,7 +65,7 @@
 			<key>CFBundleURLIconFile</key>
 			<string>feather_extension</string>
 			<key>CFBundleURLName</key>
-			<string>app.batsign.ios</string>
+			<string>com.ipastore</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>batsign</string>
@@ -107,7 +111,7 @@
 				<string>IPA</string>
 			</dict>
 			<key>UTTypeIdentifier</key>
-			<string>app.batsign.ios.ipa</string>
+			<string>com.ipastore.ipa</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -139,7 +143,7 @@
 				<string>TIPA</string>
 			</dict>
 			<key>UTTypeIdentifier</key>
-			<string>app.batsign.ios.tipa</string>
+			<string>com.ipastore.tipa</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -153,18 +157,18 @@
 			</dict>
 		</dict>
 	</array>
-<key>NSAppTransportSecurity</key>
-<dict>
-    <key>NSExceptionDomains</key>
-    <dict>
-        <key>claration.dev</key>
-        <dict>
-            <key>NSIncludesSubdomains</key>
-            <true/>
-            <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
-            <true/>
-        </dict>
-    </dict>
-</dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>claration.dev</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>
