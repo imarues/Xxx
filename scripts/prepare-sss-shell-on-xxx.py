@@ -240,6 +240,7 @@ replace_function_body(
                 metadata: knownMetadata,
                 copyNumber: variant.number,
                 dylibs: selectedDylibs,
+                operationKind: sourceKind == .link ? .download : .localFile,
                 progress: { fraction, text in
                     DispatchQueue.main.async {
                         self.workProgress = fraction
