@@ -462,11 +462,11 @@ enum XxxBatSignBridge {
         guard let raw = app.effectiveDownloadURL,
               let url = URL(string: raw),
               ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
-            trackedCompletion(.failure(NSError(domain: "XxxBatSignBridge", code: 20, userInfo: [NSLocalizedDescriptionKey: "رابط IPA غير صالح."])))
+            completion(.failure(NSError(domain: "XxxBatSignBridge", code: 20, userInfo: [NSLocalizedDescriptionKey: "رابط IPA غير صالح."])))
             return
         }
         guard selectedCertificate() != nil else {
-            trackedCompletion(.failure(SigningAssetError.invalidP12))
+            completion(.failure(SigningAssetError.invalidP12))
             return
         }
 
