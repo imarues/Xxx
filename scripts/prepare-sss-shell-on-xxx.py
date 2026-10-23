@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+import re
 
 ROOT = Path('.')
 SRC = ROOT / 'TurathSource' / 'StoreReplica'
@@ -135,6 +136,83 @@ replace_function_body(
             } else {
                 self.busy = false
                 SigningSetupCoordinator.shared.request(action: execute)
+            }
+        }
+    }'''
+)
+
+# Keep SSS view names scoped away from the preserved native Feather screens.
+for path in DST.rglob('*.swift'):
+    data = path.read_text(encoding='utf-8')
+    data = re.sub(r'\bUpdatesView\b', 'SSSUpdatesView', data)
+    path.write_text(data, encoding='utf-8')
+
+# Only UI queries need main-actor isolation. URLSession delegates remain on
+# their own queue and keep the source's explicit main-queue publication.
+transfer = DST / 'Core' / 'TransferActivityCenter.swift'
+data = transfer.read_text(encoding='utf-8')
+for marker in ['    func activeInstallOperations(', '    func activeCount(']:
+    data = data.replace(marker, '    @MainActor\n' + marker)
+transfer.write_text(data, encoding='utf-8')
+
+# Feather's certificate store is main-context based. Finish persistence before
+# dismissing the setup sheet or executing its pending signing action.
+replace_function_body(
+    DST / 'Views' / 'Components.swift',
+    '    private func importNow()',
+    '''    private func importNow() {
+        guard let p12URL, let profileURL else { return }
+        working = true
+        errorMessage = nil
+        Task { @MainActor in
+            do {
+                try SigningAssetProvider.importCertificate(
+                    p12URL: p12URL, profileURL: profileURL, password: password
+                )
+                working = false
+                onReady()
+                dismiss()
+            } catch {
+                working = false
+                errorMessage = error.localizedDescription
+            }
+        }
+    }'''
+)
+
+# The older detail sheet is kept in source as well, but its package operation
+# must use the native bridge instead of the excluded SSS preparer.
+replace_function_body(
+    DST / 'Views' / 'DetailAppActions.swift',
+    '    private func prepare(',
+    '''    private func prepare(localURL: URL, app: StoreApp, sourceURL: String, mode: DetailPackageActionMode, completion: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            let number = mode == .duplicate ? self.copyVariant.number : nil
+            let files = mode == .dylib ? self.dylibs : []
+            SigningSetupCoordinator.shared.request {
+                XxxBatSignBridge.importAndQueue(
+                    ipa: localURL, metadata: nil, copyNumber: number, dylibs: files,
+                    progress: { value, text in
+                        DispatchQueue.main.async {
+                            self.progress = 0.42 + value * 0.58
+                            self.status = text
+                        }
+                    },
+                    completion: { result in
+                        DispatchQueue.main.async {
+                            self.busy = false
+                            switch result {
+                            case .success:
+                                self.progress = 1
+                                self.status = "تم تسليم العملية إلى BatSign"
+                                completion()
+                            case .failure(let error):
+                                self.status = ""
+                                self.errorMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                )
             }
         }
     }'''

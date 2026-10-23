@@ -110,7 +110,7 @@ enum SigningAssetProvider {
             uuid: uuid,
             password: password,
             nickname: decoded.Name,
-            ppq: decoded.PPQCheck,
+            ppq: decoded.PPQCheck ?? false,
             expiration: decoded.ExpirationDate,
             isDefault: true
         ) { error in insertError = error }
@@ -222,6 +222,8 @@ struct StoreInstallState: Equatable {
     var phase: StoreInstallPhase = .idle
     var progress: Double = 0
     var message: String? = nil
+    var speedText: String? = nil
+    var errorMessage: String? { phase == .failed ? message : nil }
 }
 
 struct StoreInstallJob: Identifiable, Equatable {
@@ -449,6 +451,9 @@ final class StoreInstallCoordinator: ObservableObject {
 
     private init() {}
     func bootstrap() {}
+    func applicationDidBecomeActive() {
+        AutoSignManager.shared.handleForeground()
+    }
 
     func state(for app: StoreApp) -> StoreInstallState {
         states[app.id] ?? .init()
@@ -580,4 +585,22 @@ final class DetailPreparationCenter: ObservableObject {
 // hooks deliberately do not start a second activity or keepalive system.
 enum InstallLiveActivityBridge {
     static func cleanupStale() {}
+}
+
+// Read-only IPA inspection for the SSS file picker; no signing or mutation.
+enum XxxSideloadLocator {
+    static func locatePayload(in root: URL) -> URL? {
+        let direct = root.appendingPathComponent("Payload", isDirectory: true)
+        return (try? direct.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? direct : nil
+    }
+
+    static func locateApp(in payload: URL) -> URL? {
+        let entries = try? FileManager.default.contentsOfDirectory(
+            at: payload, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+        )
+        return entries?.first {
+            $0.pathExtension.lowercased() == "app" &&
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+    }
 }

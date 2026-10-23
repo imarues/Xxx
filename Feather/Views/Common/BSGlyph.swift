@@ -99,7 +99,7 @@ enum BSGlyph: String, CaseIterable {
 			for index in 0..<(teeth * 2) {
 				let radius: CGFloat = index % 2 == 0 ? 47 : 33
 				let angle = Double(index) / Double(teeth * 2) * 2 * .pi - .pi / 2
-				let point = CGPoint(x: 50 + radius * cos(angle), y: 50 + radius * sin(angle))
+				let point = CGPoint(x: 50 + radius * CGFloat(Darwin.cos(angle)), y: 50 + radius * CGFloat(Darwin.sin(angle)))
 				if index == 0 { p.move(to: point) } else { p.addLine(to: point) }
 			}
 			p.closeSubpath()
