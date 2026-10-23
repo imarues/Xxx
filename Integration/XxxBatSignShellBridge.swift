@@ -384,7 +384,10 @@ enum XxxBatSignBridge {
         let kind: XxxOperationRecord.Kind = !dylibs.isEmpty ? .injection : (copyNumber != nil ? .clone : operationKind)
         let sourceName = metadata?.name ?? ipa.deletingPathExtension().lastPathComponent
         let displayedName = copyNumber.map { sourceName + " " + String($0) } ?? sourceName
-        let targetBundle = copyNumber.flatMap { n in metadata?.bundleID.map { $0 + String(n) } } ?? metadata?.bundleID
+        let targetBundle: String? = {
+            guard let base = metadata?.bundleID, let number = copyNumber else { return metadata?.bundleID }
+            return base + String(number)
+        }()
 
         // Register before the detached import can publish progress or finish.
         let beginTask = Task { @MainActor in
