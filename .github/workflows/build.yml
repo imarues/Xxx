@@ -70,9 +70,12 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
-          PRODUCTS="build/Build/Products/Release-iphoneos"
-          APP=$(find "$PRODUCTS" -maxdepth 1 -type d -name '*.app' | head -1)
-          test -n "$APP"
+          # Feather Release uses DEPLOYMENT_LOCATION and installs here.
+          APP="_build/Applications/BatSign.app"
+          test -d "$APP"
+          test -f "$APP/Info.plist"
+          BIN=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Info.plist")
+          test -s "$APP/$BIN"
           rm -rf Payload packages
           mkdir -p Payload packages
           cp -R "$APP" Payload/
